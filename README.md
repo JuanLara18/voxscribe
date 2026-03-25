@@ -1,135 +1,113 @@
-# MeetingScribe
+# VoxScribe
 
-> **One‑line pitch**: *Drop a meeting video in your terminal and get back a clean, speaker‑labelled transcript plus Markdown notes — all with free, open‑source models you can run locally in under an hour.*
+Local, privacy-preserving transcription and speaker diarization for any audio or video file.
 
----
-
-## Features (v0.1)
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| High‑quality multilingual transcription (OpenAI Whisper) | ✅ | Runs on CPU or GPU |
-| Automatic speaker diarization (pyannote.audio) | ✅ | Distinguishes *who* spoke |
-| Markdown export with timestamps | ✅ | Saves to `results/transcript.md` |
-| One‑command CLI (`python main.py <video>`) | ✅ | Creates a `results/` folder |
-| Key‑frame extraction for slide changes (LMSKE) | ⏳ | Planned v0.2 |
-| Topic summarisation & action‑items (LLM) | ⏳ | Planned v0.3 |
+Wraps state-of-the-art open-source models into a single CLI and Python library. No cloud. No data leaving your machine.
 
 ---
 
-## Quick Start (⏱️ ~15 min)
+## Install
 
-> **Prereqs**: Python 3.10+, `ffmpeg` (≥ 4.2).
+Requires Python 3.10+ and [FFmpeg](https://ffmpeg.org/download.html).
 
 ```bash
-# 1. Clone & enter
-git clone https://github.com/JuanLara18/Meeting-Scribe.git
-cd meetingscribe
-
-# 2. Create env & install deps
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r config/requirements.txt
-
-# 3. Run on a sample video
-python main.py path/to/meeting.mp4
-````
-
-Output:
-
+pip install -e .
 ```
-results/
-├── transcript.md        # speaker‑segmented Markdown
-└── transcript.json      # raw structured data
+
+**Optional extras** — install what you need:
+
+```bash
+pip install "voxscribe[diarization]"    # pyannote SOTA diarization (needs HF token)
+pip install "voxscribe[alignment]"      # WhisperX word-level timestamps
+pip install "voxscribe[summarization]"  # Ollama local LLM summarization
+pip install "voxscribe[full]"           # everything
 ```
+
+Verify: `python scripts/check_env.py`
 
 ---
 
 ## Usage
 
-```bash
-usage: python main.py [-h] [--lang en] [--model base] VIDEO_PATH
-```
-
-* **`VIDEO_PATH`** – any local `.mp4 /.mkv /.mov` file.
-* **`--lang`** – ISO‑639‑1 code for forced language (default: auto‑detect).
-* **`--model`** – whisper size (`tiny` `base` `small` `medium` `large-v3`).
-
-Example with Spanish audio, medium model:
+### CLI
 
 ```bash
-python main.py reunión.mp4 --lang es --model medium
+# Basic
+voxscribe lecture.mp4
+
+# Production quality — subtitles + diarization
+voxscribe interview.mp4 --model large-v3-turbo --hf-token $HF_TOKEN -f srt -f md
+
+# Fast, no diarization
+voxscribe lecture.wav --model tiny --no-diarization -f txt
+
+# All formats + summary
+voxscribe meeting.mp4 --model large-v3-turbo --hf-token $HF_TOKEN --summarize -f md -f srt -f json
+```
+
+Full CLI reference: [`docs/CLI.md`](docs/CLI.md)
+
+### Python library
+
+```python
+from voxscribe import Transcriber
+
+result = Transcriber(
+    model="large-v3-turbo",
+    hf_token="hf_...",
+).run("interview.mp4")
+
+result.save("output/", formats=["md", "srt"], title="interview")
+
+print(result.language)   # "en"
+print(result.speakers)   # ["SPEAKER_00", "SPEAKER_01"]
+print(result.summary)    # LLM summary (if --summarize)
 ```
 
 ---
 
-## Project Structure
+## What it uses
 
-```
-meetingscribe
-├── main.py              # orchestrates the end‑to‑end pipeline
-├── processing/
-│   ├── audio.py         # audio extraction (ffmpeg)
-│   ├── transcribe.py    # whisper wrapper
-│   ├── diarize.py       # pyannote wrapper
-│   └── merge.py         # align speakers + text
-├── utils/
-│   └── markdown.py      # export helpers
-├── requirements.txt
-├── README.md
-└── results/             # auto‑created
-```
-
-Minimal today — but every component lives in its own module so we can swap models or add GPU acceleration without touching `main.py`.
+| Stage | Technology |
+|---|---|
+| Transcription | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — 4× faster than openai/whisper |
+| Word timestamps | [WhisperX](https://github.com/m-bain/whisperX) (optional) |
+| Speaker diarization | [pyannote 4.x](https://github.com/pyannote/pyannote-audio) (~8% DER) or built-in MFCC fallback |
+| Summarization | [Ollama](https://ollama.com) — Llama 3.2, Mistral, Qwen 3, … (optional) |
+| Output | Markdown, JSON, SRT, WebVTT, plain text |
 
 ---
 
-## Technology Stack
+## Speaker diarization
 
-| Layer             | Tool                                                         | Why                                    |
-| ----------------- | ------------------------------------------------------------ | -------------------------------------- |
-| **ASR**           | [OpenAI Whisper](https://github.com/openai/whisper)          | State‑of‑the‑art, MIT license, offline |
-| **Diarization**   | [pyannote.audio](https://github.com/pyannote/pyannote-audio) | SOTA pretrained pipelines              |
-| **Media**         | [`ffmpeg`](https://ffmpeg.org/)                              | battle‑tested extraction               |
-| **Future vision** | LMSKE (key‑frames), Llama‑3 local LLMs                       | keep everything free & private         |
+VoxScribe picks the best available diarizer automatically:
+
+| `HF_TOKEN` set | `pyannote-audio` installed | Result |
+|---|---|---|
+| No | — | Built-in MFCC diarizer (no setup needed) |
+| Yes | No | Warning + MFCC fallback |
+| Yes | Yes | **pyannote community-1 (~8% DER)** |
+
+To get a token: [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → accept terms at [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1).
 
 ---
 
-## How it Works (Flow Diagram)
+## Documentation
 
-```
-           video.mp4
-                │
-      ┌─────────▼─────────┐
-      │ 1. ffmpeg extract │──► audio.wav
-      └─────────┬─────────┘
-                │
-  ┌─────────────▼─────────────┐
-  │ 2. Whisper ASR → segments │
-  └─────────────┬─────────────┘
-                │
-  ┌─────────────▼─────────────┐
-  │ 3. pyannote diarize audio │
-  └─────────────┬─────────────┘
-                │
-  ┌─────────────▼─────────────┐
-  │   4. Merge text+speakers   │
-  └─────────────┬─────────────┘
-                │
-  ┌─────────────▼─────────────┐
-  │ 5. Export Markdown & JSON │
-  └───────────────────────────┘
+- [Installation guide](docs/INSTALL.md) — FFmpeg, CUDA, HuggingFace token, Ollama
+- [CLI reference](docs/CLI.md) — all options, models, environment variables
+- [Architecture](docs/ARCHITECTURE.md) — pipeline, data model, backend selection
+
+---
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+python scripts/check_env.py
 ```
 
 ---
 
-## Roadmap
-
-1. **v0.2** – Key‑frame extraction ➜ embed screenshots in Markdown.
-2. **v0.3** – Local LLM summariser ➜ bullet goals, action items.
-3. **v1.0** – Real‑time streaming mode & simple web UI (FastAPI + React).
-
----
-
-## License
-
-MIT — free for personal & commercial projects. Attribution welcome but not required.
+MIT License

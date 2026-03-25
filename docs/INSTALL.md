@@ -1,215 +1,150 @@
-# Installation Guide for MeetingScribe
+# VoxScribe — Installation Guide
 
-This guide provides detailed instructions for setting up MeetingScribe on different operating systems, with special focus on Python 3.13 compatibility.
+Detailed installation instructions for all platforms.
+
+---
 
 ## Prerequisites
 
-### Python 3.10 - 3.13
+- **Python 3.10 – 3.13**
+- **FFmpeg** (system package)
+- 4 GB RAM minimum (8 GB+ recommended for large-v3 models)
 
-MeetingScribe works with Python 3.10, 3.11, 3.12, and 3.13. Verify your Python version with:
+### Install FFmpeg
 
-```bash
-python --version
-```
+| Platform | Command |
+|---|---|
+| macOS | `brew install ffmpeg` |
+| Ubuntu / Debian | `sudo apt install ffmpeg` |
+| Windows | Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH |
 
-If needed, download Python from [python.org](https://www.python.org/downloads/).
+Verify: `ffmpeg -version`
 
-### FFmpeg
+---
 
-FFmpeg is required for audio/video processing. Installation varies by platform:
+## Install VoxScribe
 
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install ffmpeg
-```
-
-**macOS (using Homebrew):**
-```bash
-brew install ffmpeg
-```
-
-**Windows (using Chocolatey):**
-```bash
-choco install ffmpeg
-```
-
-Or download directly from [ffmpeg.org](https://ffmpeg.org/download.html).
-
-Verify installation with:
-```bash
-ffmpeg -version
-```
-
-## Installation Options
-
-### Option 1: Automated Setup (Recommended)
-
-For a guided setup experience, run:
+### Option A — pip (standard)
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-user/meetingscribe.git
-cd meetingscribe
+git clone https://github.com/JuanLara18/voxscribe.git
+cd voxscribe
 
-# Run the setup script
-python setup.py
-```
-
-The script will:
-1. Check Python version and FFmpeg installation
-2. Create a virtual environment
-3. Install most dependencies
-4. Guide you through Hugging Face authentication
-
-### Option 2: Manual Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/JuanLara18/meetingscribe.git
-cd meetingscribe
-
-# Create and activate virtual environment
 python -m venv .venv
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
 
-# On Windows:
-.\.venv\Scripts\activate
-# On macOS/Linux:
-source .venv/bin/activate
-
-# Install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .
 ```
 
-## Python 3.13 Installation (Special Instructions)
-
-**For Python 3.13 users, the Whisper installation requires a special approach**
-
-After running the basic setup (which may show Whisper installation errors), use our dedicated installer script:
+### Option B — uv (recommended, much faster)
 
 ```bash
-# After initial setup.py completes (even with Whisper errors):
-python whisper_install.py
+pip install uv
+git clone https://github.com/JuanLara18/voxscribe.git
+cd voxscribe
+
+uv venv
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
+
+uv pip install -e .
 ```
 
-This script will:
-1. Clone the Whisper repository
-2. Patch its configuration files for Python 3.13 compatibility
-3. Install it directly using the appropriate method
-
-The script tries multiple installation methods and includes fallbacks if needed.
-
-### Whisper Installation Troubleshooting
-
-If the automated script fails, you can try manual installation:
-
-1. Clone the repository:
-```bash
-git clone https://github.com/openai/whisper.git
-cd whisper
-```
-
-2. Edit `pyproject.toml`:
-   - Find any dynamic version settings like `dynamic = ["version"]` or `version = {attr = ...}`
-   - Replace with `version = "20240930"`
-
-3. Create a version file:
-```bash
-# Create whisper/__version__.py with this content:
-echo '__version__ = "20240930"' > whisper/__version__.py
-```
-
-4. Install with build isolation disabled:
-```bash
-pip install --no-build-isolation -e .
-```
-
-5. Verify installation:
-```bash
-python -c "import whisper; print('Whisper installed!')"
-```
-
-### Alternative: Using faster-whisper
-
-If you continue to face issues with Whisper installation, you can use faster-whisper as an alternative:
+### Install optional extras
 
 ```bash
-pip install faster-whisper
+# Best diarization (requires HuggingFace token)
+pip install "voxscribe[diarization]"
+
+# Word-level timestamps
+pip install "voxscribe[alignment]"
+
+# Local LLM summarization
+pip install "voxscribe[summarization]"
+
+# Everything
+pip install "voxscribe[full]"
 ```
 
-Then modify `processing/transcribe.py` to use faster-whisper instead of OpenAI's Whisper. This change will require some code adaptations but can work as a replacement.
+---
 
-## Speaker Diarization Setup
+## GPU acceleration (optional)
 
-The speaker diarization model requires authentication with Hugging Face:
+VoxScribe automatically uses CUDA if a compatible GPU and PyTorch CUDA build are present.
 
-1. Create an account at [huggingface.co](https://huggingface.co/)
-2. Accept the license agreement at [pyannote/speaker-diarization](https://huggingface.co/pyannote/speaker-diarization)
-3. Get your API token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-4. Create a `.env` file in the project root with:
-   ```
-   HF_TOKEN=your_token_here
-   ```
+```bash
+# Install PyTorch with CUDA 12.1 support
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
 
-## GPU Acceleration (Optional)
+Verify: `python -c "import torch; print(torch.cuda.is_available())"`
 
-For faster processing on compatible hardware:
+---
 
-1. Install CUDA and cuDNN (see [PyTorch documentation](https://pytorch.org/get-started/locally/))
-2. Uncomment the CUDA-specific lines in `requirements.txt`
-3. Reinstall dependencies:
+## HuggingFace token (for pyannote diarization)
+
+1. Create an account at [huggingface.co](https://huggingface.co)
+2. Go to [Settings → Tokens](https://huggingface.co/settings/tokens) → **New token** (Read)
+3. Accept the model terms at:
+   - [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+4. Set the token:
    ```bash
-   pip install -r requirements.txt
+   # .env file (recommended)
+   echo "HF_TOKEN=hf_your_token_here" >> .env
+
+   # or environment variable
+   export HF_TOKEN=hf_your_token_here
    ```
 
-## Common Problems and Solutions
+Without a token, VoxScribe uses the built-in MFCC diarizer which requires no setup.
 
-### Missing diarization models
+---
 
-If you encounter errors about missing diarization models:
-
-1. Ensure you've set up your Hugging Face token as described above
-2. Try manually downloading the model:
-```bash
-# Activate your virtual environment, then:
-python -c "from pyannote.audio import Pipeline; Pipeline.from_pretrained('pyannote/speaker-diarization', use_auth_token='YOUR_TOKEN_HERE')"
-```
-
-### Whisper module import errors
-
-If you see import errors after installing Whisper:
-
-1. Make sure your virtual environment is activated
-2. Try reinstalling with the direct GitHub URL:
-```bash
-pip install git+https://github.com/openai/whisper.git@main
-```
-
-### FFmpeg-related errors
-
-If you see errors related to FFmpeg:
-
-1. Verify FFmpeg is installed with `ffmpeg -version`
-2. Ensure it's in your system PATH
-3. On Windows, you might need to restart your terminal after installing FFmpeg
-
-## Verification
-
-Test your installation with:
+## Ollama (for summarization)
 
 ```bash
-python main.py --help
+# macOS / Linux
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Start the service
+ollama serve
+
+# Pull a model
+ollama pull llama3.2     # fast, good quality (recommended)
+ollama pull mistral       # strong instruction following
 ```
 
-You should see the command-line help information for MeetingScribe.
+Then use `--summarize` in VoxScribe.
 
-## Running MeetingScribe
+---
 
-After successful installation:
+## Verify everything
 
 ```bash
-python main.py path/to/your/video.mp4
+python scripts/check_env.py
 ```
 
-The transcription and diarization results will be saved in the `results/` folder.
+Expected output shows green checkmarks for all required components.
+
+---
+
+## Troubleshooting
+
+### "FFmpeg not found"
+- Verify installation: `ffmpeg -version`
+- Windows: ensure FFmpeg's `bin/` folder is in your `PATH`
+
+### "faster-whisper not installed"
+- Run: `pip install faster-whisper`
+
+### "pyannote model not found"
+- Confirm you accepted the model terms on HuggingFace
+- Check your token has **Read** permissions (not just Write)
+- Try: `huggingface-cli login`
+
+### "Ollama not reachable"
+- Start the daemon: `ollama serve`
+- Check it's running: `curl http://localhost:11434`
+
+### Python 3.13 compatibility
+VoxScribe uses faster-whisper (not openai-whisper), which has full Python 3.13
+support. No special workarounds needed.
