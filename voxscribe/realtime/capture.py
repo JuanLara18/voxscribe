@@ -10,31 +10,47 @@ import numpy as np
 
 
 SAMPLE_RATE = 16_000  # Hz — Whisper's native sample rate
+_BLOCK_SIZE  = 1024   # samples per sounddevice callback (~64 ms at 16 kHz)
 
 
 class AudioCapture:
-    """Captures microphone audio in fixed-duration chunks.
+    """Captures microphone audio and emits chunks sized by speech, not a fixed timer.
 
-    Runs a sounddevice InputStream in a background thread. Each fully
-    accumulated chunk is placed in a thread-safe queue as a float32 numpy
-    array of shape ``(chunk_samples,)`` at 16 kHz mono — exactly what
-    faster-whisper expects.
+    Chunks are emitted in two cases:
+    - **Silence flush**: the buffer has accumulated at least ``min_speech_seconds``
+      of audio and the last ``silence_seconds`` have been silent → emit immediately.
+      This makes transcription appear right when you finish a sentence.
+    - **Max flush**: the buffer reaches ``max_chunk_seconds`` regardless of silence
+      → guards against very long unbroken speech.
+
+    Each emitted chunk is a float32 numpy array of shape ``(n_samples,)`` at 16 kHz
+    mono — exactly what faster-whisper's ``transcribe()`` expects.
 
     Args:
-        chunk_seconds: Duration of each chunk in seconds.
-        device: sounddevice device index or name. None = system default.
+        max_chunk_seconds:  Hard upper limit on chunk duration (seconds).
+        min_speech_seconds: Minimum speech before a silence flush is considered.
+        silence_seconds:    Trailing silence needed to trigger an early flush.
+        silence_threshold:  RMS amplitude below which a block is considered silent.
+        device:             sounddevice device index or name. None = system default.
     """
 
     def __init__(
         self,
-        chunk_seconds: float = 4.0,
+        max_chunk_seconds: float = 6.0,
+        min_speech_seconds: float = 1.0,
+        silence_seconds: float = 0.6,
+        silence_threshold: float = 0.015,
         device: Optional[int | str] = None,
     ) -> None:
-        self.chunk_seconds = chunk_seconds
-        self.chunk_samples = int(SAMPLE_RATE * chunk_seconds)
+        self.max_chunk_samples  = int(SAMPLE_RATE * max_chunk_seconds)
+        self.min_speech_samples = int(SAMPLE_RATE * min_speech_seconds)
+        self._silence_blocks    = int(SAMPLE_RATE * silence_seconds / _BLOCK_SIZE)
+        self.silence_threshold  = silence_threshold
         self.device = device
+
         self._queue: queue.Queue[np.ndarray] = queue.Queue()
         self._buffer = np.empty(0, dtype=np.float32)
+        self._silent_block_count = 0
         self._lock = threading.Lock()
         self._stream = None
 
@@ -50,7 +66,7 @@ class AudioCapture:
             dtype=np.float32,
             device=self.device,
             callback=self._callback,
-            blocksize=1024,
+            blocksize=_BLOCK_SIZE,
         )
         self._stream.start()
 
@@ -62,21 +78,34 @@ class AudioCapture:
             self._stream = None
 
     def get_chunk(self, timeout: float = 0.2) -> Optional[np.ndarray]:
-        """Return the next ready audio chunk, or None if none available yet."""
+        """Return the next ready audio chunk, or None if none is available yet."""
         try:
             return self._queue.get(timeout=timeout)
         except queue.Empty:
             return None
 
-    # ── Internal callback (called from sounddevice audio thread) ─────────────
+    # ── Internal callback (audio thread) ─────────────────────────────────────
 
     def _callback(self, indata: np.ndarray, frames: int, time, status) -> None:  # noqa: ANN001
+        block = indata[:, 0]
+        is_silent = float(np.sqrt(np.mean(block ** 2))) < self.silence_threshold
+
         with self._lock:
-            self._buffer = np.concatenate([self._buffer, indata[:, 0]])
-            # Emit complete chunks; keep any leftover samples for the next one.
-            while len(self._buffer) >= self.chunk_samples:
-                self._queue.put(self._buffer[: self.chunk_samples].copy())
-                self._buffer = self._buffer[self.chunk_samples :]
+            self._buffer = np.concatenate([self._buffer, block])
+
+            if is_silent:
+                self._silent_block_count += 1
+            else:
+                self._silent_block_count = 0
+
+            has_enough_speech = len(self._buffer) >= self.min_speech_samples
+            silence_reached   = self._silent_block_count >= self._silence_blocks
+            max_reached       = len(self._buffer) >= self.max_chunk_samples
+
+            if (has_enough_speech and silence_reached) or max_reached:
+                self._queue.put(self._buffer.copy())
+                self._buffer = np.empty(0, dtype=np.float32)
+                self._silent_block_count = 0
 
 
 # ── Device discovery ──────────────────────────────────────────────────────────

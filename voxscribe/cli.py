@@ -325,10 +325,22 @@ def live(
         float,
         typer.Option(
             "--chunk",
-            help="Audio chunk duration in seconds. Lower = faster response, higher = more accurate.",
+            help=(
+                "Max chunk duration (seconds). Chunks are emitted earlier when silence "
+                "is detected — this is only the hard upper limit."
+            ),
             rich_help_panel="Audio",
         ),
-    ] = 4.0,
+    ] = 6.0,
+    silence_threshold: Annotated[
+        float,
+        typer.Option(
+            "--silence-threshold",
+            help="RMS amplitude below which audio is considered silent (0.0–1.0). "
+                 "Raise if your mic is noisy, lower in a quiet room.",
+            rich_help_panel="Audio",
+        ),
+    ] = 0.015,
     input_device: Annotated[
         Optional[int],
         typer.Option(
@@ -409,7 +421,11 @@ def live(
             console.print(f"[red]Failed to load model:[/] {exc}")
             raise typer.Exit(code=1) from exc
 
-    capture = AudioCapture(chunk_seconds=chunk, device=input_device)
+    capture = AudioCapture(
+        max_chunk_seconds=chunk,
+        silence_threshold=silence_threshold,
+        device=input_device,
+    )
 
     running = True
 
