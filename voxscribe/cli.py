@@ -365,10 +365,26 @@ def live(
       [green]# List available microphones first[/green]
       voxscribe devices
     """
+    import os
     import threading
+    import warnings
+
+    # ── Silence noisy third-party output ─────────────────────────────────────
+    # Load .env so HF_TOKEN is available (suppresses unauthenticated HF warning).
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    # Disable HuggingFace symlink warning on Windows (cosmetic only).
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
     level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    for noisy in ("huggingface_hub", "huggingface_hub.utils._http", "faster_whisper",
+                  "ctranslate2", "numba", "torch", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
+
+    warnings.filterwarnings("ignore", category=UserWarning)
+    warnings.filterwarnings("ignore", category=FutureWarning)
 
     # Check sounddevice is available.
     try:
@@ -386,12 +402,12 @@ def live(
 
     streamer = LiveStreamer(model=model, lang=lang, device=device, translate=translate)
 
-    console.print(f"[cyan]Loading model '{model}'…[/]")
-    try:
-        resolved_device, compute_type = streamer.load_model()
-    except Exception as exc:
-        console.print(f"[red]Failed to load model:[/] {exc}")
-        raise typer.Exit(code=1) from exc
+    with console.status(f"[cyan]Loading model '{model}'…[/]", spinner="dots"):
+        try:
+            resolved_device, compute_type = streamer.load_model()
+        except Exception as exc:
+            console.print(f"[red]Failed to load model:[/] {exc}")
+            raise typer.Exit(code=1) from exc
 
     capture = AudioCapture(chunk_seconds=chunk, device=input_device)
 
@@ -407,19 +423,12 @@ def live(
     worker = threading.Thread(target=transcription_loop, daemon=True)
     worker.start()
 
-    console.print(
-        f"[green]● Recording[/]  model=[bold]{model}[/]  "
-        f"device=[bold]{resolved_device}[/] ({compute_type})  "
-        f"chunk=[bold]{chunk}s[/]  "
-        f"[dim]Ctrl+C to stop[/]"
-    )
+    import time
 
     try:
         with LiveDisplay(model=model, device=resolved_device) as display:
             while True:
-                state = streamer.get_state()
-                display.update(state)
-                import time
+                display.update(streamer.get_state())
                 time.sleep(0.1)
     except KeyboardInterrupt:
         pass
@@ -427,7 +436,7 @@ def live(
         running = False
         capture.stop()
         worker.join(timeout=2)
-        console.print("\n[cyan]Stopped.[/]")
+        console.print("[cyan]Stopped.[/] Press Enter if cursor is stuck.", end="\n")
 
 
 @app.command()
