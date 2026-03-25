@@ -80,8 +80,14 @@ ipython_config.py
 
 # Private files
 *.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
 results/
+output/
 *.env
 
 # Others
 whisper_src/
+uv.lock
