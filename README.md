@@ -89,6 +89,7 @@ pip install -e .
 pip install "voxscribe[diarization]"    # pyannote SOTA diarization (needs HF token)
 pip install "voxscribe[alignment]"      # WhisperX word-level timestamps
 pip install "voxscribe[summarization]"  # Ollama local LLM summarization
+pip install "voxscribe[realtime]"       # live microphone transcription
 pip install "voxscribe[full]"           # everything
 ```
 
@@ -112,6 +113,12 @@ voxscribe lecture.wav --model tiny --no-diarization -f txt
 
 # Full pipeline — word timestamps + diarization + summary
 voxscribe meeting.mp4 --backend whisperx --hf-token $HF_TOKEN --summarize -f md -f srt -f json
+
+# Live microphone — on-screen subtitles in real time
+voxscribe live                          # auto-detect language, GPU if available
+voxscribe live --lang es --model medium # force Spanish, higher accuracy
+voxscribe live --translate              # translate anything to English live
+voxscribe devices                       # list available microphones
 ```
 
 Full CLI reference: [`docs/CLI.md`](docs/CLI.md)

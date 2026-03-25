@@ -59,11 +59,16 @@ alignment = [
 summarization = [
     "ollama>=0.4.0",
 ]
+# Real-time microphone transcription
+realtime = [
+    "sounddevice>=0.4.6",
+]
 # Full SOTA stack: all optional extras combined
 full = [
     "pyannote-audio>=3.1.0",
     "whisperx>=3.0.0",
     "ollama>=0.4.0",
+    "sounddevice>=0.4.6",
 ]
 # Development toolchain
 dev = [
@@ -77,9 +82,9 @@ dev = [
 voxscribe = "voxscribe.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/JuanLara18/Meeting-Scribe"
-Repository = "https://github.com/JuanLara18/Meeting-Scribe"
-"Bug Tracker" = "https://github.com/JuanLara18/Meeting-Scribe/issues"
+Homepage = "https://github.com/JuanLara18/voxscribe"
+Repository = "https://github.com/JuanLara18/voxscribe"
+"Bug Tracker" = "https://github.com/JuanLara18/voxscribe/issues"
 
 # ── Hatch build configuration ────────────────────────────────────────────────
 [tool.hatch.build.targets.wheel]

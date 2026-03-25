@@ -282,5 +282,195 @@ def main(
         raise typer.Exit(code=1) from exc
 
 
+@app.command()
+def live(
+    # ── Transcription ─────────────────────────────────────────────────────
+    model: Annotated[
+        str,
+        typer.Option(
+            "--model", "-m",
+            help=(
+                "Whisper model. [dim]'small' is a good default for real-time. "
+                "'base' is faster, 'medium' more accurate.[/]"
+            ),
+            rich_help_panel="Transcription",
+        ),
+    ] = "small",
+    lang: Annotated[
+        Optional[str],
+        typer.Option(
+            "--lang", "-l",
+            help="Force language (ISO-639-1, e.g. 'en', 'es'). Default: auto-detect.",
+            rich_help_panel="Transcription",
+        ),
+    ] = None,
+    device: Annotated[
+        str,
+        typer.Option(
+            "--device",
+            help="Compute device. [dim]'auto' selects CUDA if available.[/]",
+            rich_help_panel="Transcription",
+        ),
+    ] = "auto",
+    translate: Annotated[
+        bool,
+        typer.Option(
+            "--translate",
+            help="Translate speech to English instead of transcribing in source language.",
+            rich_help_panel="Transcription",
+        ),
+    ] = False,
+    # ── Audio input ───────────────────────────────────────────────────────
+    chunk: Annotated[
+        float,
+        typer.Option(
+            "--chunk",
+            help="Audio chunk duration in seconds. Lower = faster response, higher = more accurate.",
+            rich_help_panel="Audio",
+        ),
+    ] = 4.0,
+    input_device: Annotated[
+        Optional[int],
+        typer.Option(
+            "--input-device", "-d",
+            help="Microphone device index (see: voxscribe devices). Default: system default.",
+            rich_help_panel="Audio",
+        ),
+    ] = None,
+    # ── Global ────────────────────────────────────────────────────────────
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable debug logging."),
+    ] = False,
+) -> None:
+    """Live microphone transcription with on-screen subtitles.
+
+    Captures audio from your microphone in real time and displays a rolling
+    transcript on screen. Press [bold]Ctrl+C[/] to stop.
+
+    [bold]Examples:[/bold]
+
+      [green]# Start with auto-detect language (GPU auto-selected)[/green]
+      voxscribe live
+
+      [green]# Force Spanish, use medium model[/green]
+      voxscribe live --lang es --model medium
+
+      [green]# Translate any language to English[/green]
+      voxscribe live --translate
+
+      [green]# Slower chunks = better accuracy (less frequent updates)[/green]
+      voxscribe live --chunk 6
+
+      [green]# List available microphones first[/green]
+      voxscribe devices
+    """
+    import threading
+
+    level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    # Check sounddevice is available.
+    try:
+        import sounddevice  # noqa: F401
+    except ImportError:
+        console.print(
+            "[red]sounddevice is required for live mode.[/]\n"
+            "Install it with: [bold]pip install voxscribe\\[realtime][/]"
+        )
+        raise typer.Exit(code=1)
+
+    from voxscribe.realtime.capture import AudioCapture
+    from voxscribe.realtime.display import LiveDisplay
+    from voxscribe.realtime.streamer import LiveStreamer
+
+    streamer = LiveStreamer(model=model, lang=lang, device=device, translate=translate)
+
+    console.print(f"[cyan]Loading model '{model}'…[/]")
+    try:
+        resolved_device, compute_type = streamer.load_model()
+    except Exception as exc:
+        console.print(f"[red]Failed to load model:[/] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    capture = AudioCapture(chunk_seconds=chunk, device=input_device)
+
+    running = True
+
+    def transcription_loop() -> None:
+        while running:
+            audio = capture.get_chunk(timeout=0.2)
+            if audio is not None:
+                streamer.process_chunk(audio)
+
+    capture.start()
+    worker = threading.Thread(target=transcription_loop, daemon=True)
+    worker.start()
+
+    console.print(
+        f"[green]● Recording[/]  model=[bold]{model}[/]  "
+        f"device=[bold]{resolved_device}[/] ({compute_type})  "
+        f"chunk=[bold]{chunk}s[/]  "
+        f"[dim]Ctrl+C to stop[/]"
+    )
+
+    try:
+        with LiveDisplay(model=model, device=resolved_device) as display:
+            while True:
+                state = streamer.get_state()
+                display.update(state)
+                import time
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        running = False
+        capture.stop()
+        worker.join(timeout=2)
+        console.print("\n[cyan]Stopped.[/]")
+
+
+@app.command()
+def devices() -> None:
+    """List available microphone / audio input devices.
+
+    Use the index shown here with [bold]voxscribe live --input-device INDEX[/].
+    """
+    try:
+        import sounddevice  # noqa: F401
+    except ImportError:
+        console.print(
+            "[red]sounddevice is required.[/] "
+            "Install with: [bold]pip install voxscribe\\[realtime][/]"
+        )
+        raise typer.Exit(code=1)
+
+    from rich.table import Table
+
+    from voxscribe.realtime.capture import list_input_devices
+
+    devs = list_input_devices()
+    if not devs:
+        console.print("[yellow]No input devices found.[/]")
+        return
+
+    table = Table(title="Available Microphones", border_style="cyan", show_lines=True)
+    table.add_column("Index", style="bold cyan", justify="right")
+    table.add_column("Name")
+    table.add_column("Channels", justify="right")
+    table.add_column("Default Sample Rate", justify="right")
+
+    for d in devs:
+        table.add_row(
+            str(d["index"]),
+            d["name"],
+            str(d["channels"]),
+            f"{d['default_samplerate']:,} Hz",
+        )
+
+    console.print(table)
+    console.print("[dim]Use: voxscribe live --input-device INDEX[/]")
+
+
 if __name__ == "__main__":
     app()
