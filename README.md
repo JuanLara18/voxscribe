@@ -115,11 +115,15 @@ voxscribe lecture.wav --model tiny --no-diarization -f txt
 voxscribe meeting.mp4 --backend whisperx --hf-token $HF_TOKEN --summarize -f md -f srt -f json
 
 # Live microphone — on-screen subtitles in real time
-voxscribe live                          # auto-detect language, GPU if available
-voxscribe live --lang es --model medium # force Spanish, higher accuracy
-voxscribe live --translate              # translate anything to English live
-voxscribe devices                       # list available microphones
+voxscribe live                                      # auto-detect language, GPU if available
+voxscribe live --lang es --model distil-large-v3.5  # force Spanish, highest accuracy
+voxscribe live --translate                          # translate anything to English live
+voxscribe devices                                   # list available microphones
 ```
+
+**Live mode** streams audio from your microphone and transcribes in real time. Chunks are emitted on silence — text appears ~0.6s after you finish speaking.
+
+![VoxScribe Live — real-time transcription with mixed Spanish/English](assets/live-demo.png)
 
 Full CLI reference: [`docs/CLI.md`](docs/CLI.md)
 
